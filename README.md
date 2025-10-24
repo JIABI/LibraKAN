@@ -1,150 +1,208 @@
-# LibraKAN Framework
+# LibraKAN — Upgraded (2025)
 
-This repository implements the **LibraKAN** architecture and its baselines (KAN, KAF, MLP) across multiple levels of evaluation:
-
-- 🧠 `implicit_nf/` — Implicit Neural Fields (coordinate reconstruction on DIV2K, Kodak24, Urban100)
-- ⚖️ `kanbefair/` — Benchmark suite for fair KAN-family comparison (used in small-scale experiments)
-- 🔬 `libra_ablation/` — Full ablation studies on LibraKAN design (MNIST/FMIST classification & implicit regression)
-- 🌍 `libra_downstream/` — Large-scale dense prediction tasks (COCO detection, ADE20K segmentation)
-- 📄 `README.md` — Project overview & usage guide (this file)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/pytorch-2.3%2B-red.svg)](https://pytorch.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![CUDA](https://img.shields.io/badge/CUDA-11.8%2B-76B900.svg)](#)
 
 ---
 
-## 🔧 Environment Setup
+## 🧠 Overview
 
-Recommended Python ≥ 3.10 (tested on CUDA 11.8, PyTorch ≥ 2.3)
+**LibraKAN** is a dual-branch Kolmogorov–Arnold network featuring a **NUFFT–ES spectral branch** and a **local MLP branch**.  
+It introduces **learnable spectral sparsity** through trainable shrinkage (`λ`) and fractional exponent (`p`), with end-to-end support for both **1D** and **2D NUFFT** operations.
+
+This repository contains **the upgraded 2025 release**, aligned with the latest method implementation and covering **Experiments 4.1–4.6** in the paper.
+
+---
+
+## 🧩 Architecture Diagram
+
+<p align="center">
+  <img src="docs/architecture.svg" alt="LibraKAN Architecture" width="720"/>
+</p>
+
+> The architecture consists of two cooperative paths:  
+> ① **Spectral NUFFT–ES branch** learns non-uniform frequency representations with differentiable exponential-sine kernels;  
+> ② **Local MLP branch** preserves fine-grained structure and spatial context;  
+> A **shrinkage controller** fuses both, enforcing learnable spectral sparsity.
+
+---
+
+## ⚙️ Installation
 
 ```bash
 conda create -n librakan python=3.10 -y
 conda activate librakan
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-pip install numpy tqdm scikit-image einops pillow tabulate matplotlib pandas
+pip install -r requirements.txt
+pip install -e .
+```
+
+Optional third-party baselines:
+```bash
+pip install git+https://github.com/kolmogorovArnoldFourierNetwork/KAF.git
+pip install git+https://github.com/KindXiaoming/pykan.git
+pip install git+https://github.com/Adamdad/kat.git
 ```
 
 ---
 
-## 📁 Folder Overview
+## 📁 Project Structure
 
-| Folder | Purpose | Notes |
-|:-------|:---------|:------|
-| `implicit_nf/` | Implicit neural field reconstruction (image super-res / signal fitting) | contains spectral design & NUFFT-based LibraKAN core |
-| `kanbefair/` | Baseline comparison for MLP, KAN, KAF, FAN | shared dataset loaders and configs |
-| `libra_ablation/` | Core ablation experiments (MNIST, FMNIST) | supports ρ, λ, p-sweep and ES kernel toggles |
-| `libra_downstream/` | Dense prediction (COCO detection, ADE20K segmentation) | integrated into Faster/Mask R-CNN and UPerNet heads |
-| `README.md` | this documentation | generated version for GitHub |
-
----
-
-## 🚀 Quick Start
-
-### 1️⃣ LibraKAN Ablation (MNIST)
-
-```bash
-cd libra_ablation
-
-python ablation.py --task cls --dataset mnist --mixer librakan   --width 256 --depth 2 --epochs 10   --lr 1e-3 --rho 0.2 --tau 1e-3 --p_sparse 0.6   --spectral_scale 0.6 --es_beta 8.0 --no_cos   --alpha_sparse 1e-5 --alpha_balance 1e-4 --grad_clip 0.7   --out runs/cls_libra
 ```
+librakan_act/
+  ├── librakan.py
+  ├── nufft_es.py
+  ├── shrinkage.py
+  └── __init__.py
 
-**Baselines:**
-```bash
-python ablation.py --mixer kaf --dataset mnist --out runs/kaf
-python ablation.py --mixer mlp --dataset mnist --out runs/mlp
-```
+experiments/
+  ├── 4.1_main_results/
+  ├── 4.2_kanbefair/
+  ├── 4.3_libra_downstream/
+  ├── 4.4_implicit_nf/
+  ├── 4.5_libra_ablation/
+  └── 4.6_Function Approximation/
 
-### 2️⃣ Implicit Neural Field Reconstruction
-
-```bash
-cd implicit_nf
-
-python train_nf.py --image data/kodim07.png --mixer librakan   --width 256 --depth 8 --epochs 20 --batch 4096   --lr 1e-3 --rho 0.2 --tau 1e-3 --p_sparse 0.6   --spectral_scale 0.6 --es_beta 7.0 --out runs/kodim07
-```
-
-### 3️⃣ Large-scale Downstream Evaluation (Optional)
-
-```bash
-cd libra_downstream
-python train_coco.py     # Faster/Mask R-CNN + LibraKAN
-python train_ade20k.py   # UPerNet + LibraKAN
+pyproject.toml
+requirements.txt
+README.md
 ```
 
 ---
 
-## ⚙️ LibraKAN Key Parameters
+## 🔬 Core Method Components
 
-| Arg | Meaning | Typical |
-|:----|:--------|:--------|
-| `--rho` | spectral sparsity ratio | 0.2–0.4 |
-| `--tau` | base soft-threshold λ | 1e-3 |
-| `--p_sparse` | p-norm exponent (Lp shrinkage) | 0.4–0.6 |
-| `--spectral_scale` | frequency magnitude scaling | 0.5–0.8 |
-| `--es_beta` | ES window sharpness | 6–8 |
-| `--no_cos` | disable cosine pair in spectral basis | yes (for stability) |
-| `--alpha_sparse` | sparsity penalty weight | 1e-5–5e-5 |
-| `--alpha_balance` | local/spectral branch balance | 1e-4 |
+| Component | Description |
+|------------|-------------|
+| NUFFT–ES | Differentiable Non-Uniform FFT with Exponential-Sine window |
+| Shrinkage | Learnable λ and p (`p = sigmoid(plogit)`) for adaptive sparsity |
+| Active-Freq | Counts spectral coefficients |aₖ| > 1e-3 |
+| Compatibility | Drop-in mixer for MLP-based backbones |
 
----
-
-## 🧩 Ablation Protocol
-
-We study:
-1. Removing soft-thresholding (`--wo_soft`)
-2. Uniform vs non-uniform frequencies (`--uniform`)
-3. Removing ES kernel (`--wo_es`)
-4. Varying spectral sparsity ρ (0.1–0.6)
-5. Varying λ (×0.5, ×1.0, ×2.0)
-6. Varying Lp norm (p = 0–1)
-7. Changing local activations (ReLU / SiLU / GELU)
-
-Metrics: **Top-1**, **PSNR**, **Active-Freq**, **FLOPs**  
-Default dataset: MNIST or FMNIST
-
-Example sweep:
-```bash
-for p in 0 0.2 0.4 0.6 0.8; do
-  python ablation.py --mixer librakan --p_sparse $p --out runs/p_$p
-done
+### Example usage
+```python
+from librakan_act import make_librakan_mixer
+mixer = make_librakan_mixer(in_dim=256, hidden_dim=256,
+                            F=512, nufft_dim=2,
+                            lambda_init=0.02, lambda_trainable=True,
+                            p_trainable=True)
 ```
 
 ---
 
-## 📊 Example Results
+## 🚀 Experiments
 
-| Variant | Top-1 (%) ↑ | PSNR (dB) ↑ | Active-Freq ↓ | FLOPs (G) ↓ |
-|:--|:--|:--|:--|:--|
-| LibraKAN (default) | **94.2±0.1** | **35.4±0.2** | 24±3 | 0.48 |
-| w/o soft-threshold | 90.8 | 30.6 | 88 | 0.53 |
-| uniform freq only | 91.9 | 31.2 | 52 | 0.50 |
-| w/o ES kernel | 92.3 | 32.0 | 39 | 0.49 |
-| ρ=0.2 | 94.2 | 35.4 | 24 | 0.48 |
-| p=0.6 | 94.2 | 35.4 | 24 | 0.48 |
-| ReLU / SiLU | 93.3 / 94.0 | 34.4 / 35.1 | 25 / 24 | 0.48 |
+### **4.1 Main Results (Table 1)**
+
+| Model | Dataset | Replacement | Command |
+|--------|----------|-------------|----------|
+| ResNet-18 | CIFAR-10 | Head MLP | `python resnet18_cifar10.py --mixer librakan` |
+| MLP-Mixer/S | ImageNet-1K | Channel MLP | `python mlpmixerS_imagenet.py --mixer librakan` |
+| ViT-T/16 | ImageNet-1K | FFN | `python vit_tiny16_imagenet.py --mixer librakan` |
+| DeiT-tiny | CIFAR-100 | FFN | `python deit_tiny_cifar100.py --mixer librakan` |
+
+---
+
+### **4.2 KanBeFair (Benchmark Baselines)**
+Fair comparison of all MLP-like architectures on CIFAR/MNIST variants.
+
+```bash
+cd experiments/4.2_kanbefair
+python train.py --dataset cifar10 --mixer librakan --nufft_dim 2 --p_fixed 0.5
+```
+
+---
+
+### **4.3 Downstream Vision Tasks**
+- COCO Detection (Faster R-CNN)  
+- COCO Instance Segmentation (Mask R-CNN)  
+- ADE20K Semantic Segmentation (UPerNet-lite)
+
+```bash
+cd experiments/4.3_libra_downstream
+python fasterrcnn_coco.py --mixer librakan --p_trainable --lambda_trainable
+python maskrcnn_coco.py --mixer kaf
+python upernet_ade20k.py --mixer librakan --nufft_dim 2
+```
+
+---
+
+### **4.4 Implicit Neural Field Reconstruction (Figure 3)**
+Reconstruction datasets: **Kodak24**, **DIV2K**, **Urban100**.
+
+Outputs:
+- `curve_*.png`: loss vs epoch  
+- `spectrum_*.png`: rank–magnitude of |z|  
+- `fig3_*.png`: PSNR / SSIM / Active-Freq panel
+
+```bash
+cd experiments/4.4_implicit_nf
+python train.py --dataset kodak24 --models mlp,kaf,librakan   --epochs 200 --nufft_dim 2 --p_trainable --lambda_trainable
+```
+
+---
+
+### **4.5 Ablation Study (Table 6)**
+All combinations of `F`, `nufft_dim`, `p`/`λ` learnability, `es_beta` are tested automatically via `run.sh`.
+
+```bash
+cd experiments/4.5_libra_ablation
+bash run.sh
+```
+
+Produces:
+- `results/ablation_*.json`  
+- `results/table6.csv`  
+- `results/ablation_acc_vs_F_*.png`  
+- `results/ablation_activefreq_*.png`
+
+---
+
+### **4.6 Function Approximation**
+```bash
+cd experiments/4.6_Function\ Approximation
+python run_funcapprox.py --mixer librakan --nufft_dim 1
+```
+
+---
+
+## 📊 Metrics
+
+| Metric | Description |
+|:--|:--|
+| Top-1 | Classification accuracy |
+| PSNR / SSIM | Reconstruction fidelity |
+| Active-Freq | Number of active frequencies |
+| FLOPs / Params | Model efficiency |
+
+---
+
+## 🧩 Integration Example
+
+```python
+from librakan_act import make_librakan_mixer
+layer = make_librakan_mixer(in_dim=128, hidden_dim=128, F=256, nufft_dim=1,
+                            spectral_scale=1.0, es_beta=6.0,
+                            lambda_init=0.02, lambda_trainable=True,
+                            p_fixed=0.5, p_trainable=True)
+```
 
 ---
 
 ## 📚 Citation
 
-If you use this framework, please cite:
-
 ```bibtex
-@article{your2025librakan,
-  title={LibraKAN: xxx},
-  author={xx, xx, xx},
-  journal={XXXXX},
+@article{librakan2025,
+  title={CVKAN},
+  author={XXX},
+  journal={Under Review, XXX 2026},
   year={2025}
 }
 ```
 
 ---
 
-## 🧠 Notes
-
-- All models are pretrained on ImageNet-1K when transferred to COCO/ADE20K.
-- MNIST/FMIST ablations do not require pretraining.
-- Active-Freq counts post-threshold spectral coefficients (`|a_k| > 1e-3`).
-- FLOPs are per single forward pass at canonical resolution.
-
----
-
 ## 🪪 License
-
-This repository is released under the **MIT License**.
+MIT License © 2025 Libra Research Group.
